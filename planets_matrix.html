@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  LIZENZEN / LICENSES
+================================================================================
+
+  VGA Planets Nu – Webclient
+  Entwickelt mit Claude (Anthropic). Eigenständiges Werk, frei nutzbar.
+
+  ── React 18 ────────────────────────────────────────────────────────────────
+  MIT License
+  Copyright (c) Meta Platforms, Inc. and affiliates.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+
+  Quelle: https://github.com/facebook/react/blob/main/LICENSE
+
+  ── Babel Standalone ────────────────────────────────────────────────────────
+  MIT License
+  Copyright (c) 2014-present Sebastian McKenzie and other contributors
+
+  (Gleicher MIT-Lizenztext wie oben)
+  Quelle: https://github.com/babel/babel/blob/main/LICENSE
+
+  ── Node.js (proxy.js) ──────────────────────────────────────────────────────
+  MIT License
+  Copyright Node.js contributors. All rights reserved.
+
+  (Gleicher MIT-Lizenztext wie oben)
+  Quelle: https://github.com/nodejs/node/blob/main/LICENSE
+
+  ── Planets.nu API ──────────────────────────────────────────────────────────
+  Die Planets.nu API wird von planets.nu bereitgestellt.
+  Nutzung gemäß der offiziellen API-Dokumentation unter:
+  https://help.planets.nu/API
+  Bitte die Nutzungsbedingungen von planets.nu beachten:
+  https://planets.nu/terms
+
+================================================================================
+-->
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VGA Planets – Kollaborationsmatrix</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0a0a1a;
+    color: #c8d8f0;
+    min-height: 100vh;
+  }
+
+  .stars-bg {
+    position: fixed; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 12% 18%, #ffffff44, transparent),
+      radial-gradient(1px 1px at 38% 62%, #ffffff33, transparent),
+      radial-gradient(1px 1px at 68% 14%, #ffffff55, transparent),
+      radial-gradient(1px 1px at 84% 76%, #ffffff22, transparent),
+      radial-gradient(1px 1px at 22% 84%, #ffffff44, transparent),
+      radial-gradient(1px 1px at 54% 38%, #ffffff33, transparent),
+      radial-gradient(1px 1px at 91% 44%, #ffffff44, transparent),
+      radial-gradient(2px 2px at 8%  52%, #4488ff22, transparent),
+      radial-gradient(2px 2px at 62% 82%, #4488ff22, transparent),
+      radial-gradient(1px 1px at 45% 25%, #ffffff33, transparent),
+      radial-gradient(1px 1px at 76% 55%, #ffffff22, transparent),
+      radial-gradient(1px 1px at 30% 70%, #ffffff44, transparent);
+    pointer-events: none; z-index: 0;
+  }
+
+  #root {
+    position: relative; z-index: 1;
+    max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem;
+  }
+</style>
+</head>
+<body>
+<div class="stars-bg"></div>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useCallback } = React;
+
+const PROXY = 'http://localhost:8765';
+
+async function apiFetch(path) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const r = await fetch(PROXY + path, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const text = await r.text();
+    if (!text.trim()) throw new Error('Leere Antwort');
+    return JSON.parse(text);
+  } catch(e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
+const RACES = {
+  1:'Solar Federation', 2:'Lizard Alliance', 3:'Empire of Birds',
+  4:'Hordes of Fury', 5:'Privateer Bands', 6:'The Cyborg',
+  7:'Crystal Confederation', 8:'Evil Empire', 9:'Robotic Imperium',
+  10:'Rebel Confederation', 11:'Missing Colonies'
+};
+
+const RACE_COLORS = {
+  1:'#4488ff', 2:'#44cc44', 3:'#ffaa00', 4:'#ff4444',
+  5:'#aa44ff', 6:'#44ffcc', 7:'#ff44aa', 8:'#ff6600',
+  9:'#00aaff', 10:'#ffff44', 11:'#ff88ff'
+};
+
+// ── Styles ──────────────────────────────────────────────────────────────────
+const S = {
+  header: {
+    display:'flex', alignItems:'center', gap:12,
+    marginBottom:'2rem', borderBottom:'0.5px solid #2a4a7a55', paddingBottom:'1rem'
+  },
+  logoIcon: {
+    width:38, height:38, border:'2px solid #3a7aff', borderRadius:'50%',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    fontSize:18, color:'#3a7aff', flexShrink:0
+  },
+  logoText: { fontSize:15, fontWeight:'bold', letterSpacing:2, color:'#6ab0ff', textTransform:'uppercase' },
+  logoSub:  { fontSize:10, color:'#4a7aaa', letterSpacing:3 },
+
+  card: {
+    background:'#0d1528', border:'0.5px solid #2a4a7a44',
+    borderRadius:6, padding:'1.5rem', marginBottom:'1rem'
+  },
+  sectionTitle: {
+    fontSize:10, letterSpacing:3, color:'#4a7aaa',
+    textTransform:'uppercase', marginBottom:'1rem'
+  },
+  input: {
+    width:'100%', background:'#060d1a', border:'0.5px solid #2a4a7a',
+    borderRadius:4, padding:'10px 14px', fontFamily:'Courier New, monospace',
+    fontSize:13, color:'#a0c8f0', outline:'none'
+  },
+  label: {
+    display:'block', fontSize:10, letterSpacing:2,
+    color:'#4a7aaa', marginBottom:6, textTransform:'uppercase'
+  },
+  btn: {
+    background:'#0d2a5a', border:'0.5px solid #3a7aff', color:'#6ab0ff',
+    padding:'10px 24px', fontFamily:'Courier New, monospace', fontSize:11,
+    letterSpacing:3, textTransform:'uppercase', cursor:'pointer',
+    borderRadius:4, transition:'all 0.2s', marginTop:'0.5rem'
+  },
+  btnDisabled: {
+    opacity:0.4, cursor:'not-allowed'
+  },
+  error: {
+    marginTop:'1rem', padding:'10px 14px', background:'#1a0808',
+    border:'0.5px solid #7a2a2a', borderRadius:4, fontSize:11,
+    color:'#f09090', letterSpacing:0.5, lineHeight:1.6, whiteSpace:'pre-wrap'
+  },
+  progress: {
+    marginTop:'1rem', padding:'10px 14px', background:'#0d1020',
+    border:'0.5px solid #2a3a6a', borderRadius:4, fontSize:10,
+    color:'#3a7aff', letterSpacing:1
+  },
+  playerRow: {
+    display:'flex', alignItems:'center', gap:10,
+    padding:'6px 0', borderBottom:'0.5px solid #1a2a4a22', fontSize:12
+  },
+  dot: { width:8, height:8, borderRadius:'50%', flexShrink:0 },
+
+  // Matrix
+  matrixWrap: { overflowX:'auto', marginTop:'1rem' },
+  table: { borderCollapse:'collapse', fontSize:11, letterSpacing:0.5 },
+  th: {
+    padding:'6px 10px', textAlign:'center',
+    background:'#0d1528', color:'#3a6a9a',
+    border:'0.5px solid #1a2a4a55', whiteSpace:'nowrap',
+    position:'sticky', top:0
+  },
+  thRow: {
+    padding:'6px 10px', textAlign:'right',
+    background:'#0d1528', color:'#3a6a9a',
+    border:'0.5px solid #1a2a4a55', whiteSpace:'nowrap',
+    position:'sticky', left:0
+  },
+  td: {
+    padding:'5px 8px', textAlign:'center',
+    border:'0.5px solid #1a2a4a33', cursor:'default'
+  },
+  statGrid: {
+    display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px,1fr))',
+    gap:'0.75rem', marginBottom:'1.5rem'
+  },
+  statCard: {
+    background:'#0d1528', border:'0.5px solid #2a4a7a44',
+    borderRadius:6, padding:'0.875rem 1rem'
+  },
+  statLabel: { fontSize:9, letterSpacing:2, color:'#3a6a9a', textTransform:'uppercase', marginBottom:6 },
+  statValue: { fontSize:20, color:'#6ab0ff', fontWeight:'bold' },
+};
+
+// ── Spinner ──────────────────────────────────────────────────────────────────
+function Spinner({ text }) {
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'1rem',padding:'3rem',color:'#3a6a9a',fontSize:11,letterSpacing:2}}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div style={{width:32,height:32,border:'1px solid #2a4a7a',borderTopColor:'#3a7aff',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
+      {text}
+    </div>
+  );
+}
+
+// ── Kollaborationsmatrix ─────────────────────────────────────────────────────
+function Matrix({ players, sharedGames }) {
+  const [hovered, setHovered] = useState(null);
+
+  // Zellfarbe nach Anzahl gemeinsamer Spiele
+  function cellColor(count) {
+    if (count === 0) return '#0a0a1a';
+    if (count === 1) return '#0d2a5a';
+    if (count === 2) return '#1a3a7a';
+    if (count <= 4)  return '#2a5aaa';
+    return '#3a7aff';
+  }
+
+  function cellText(a, b, count) {
+    if (a === b) return '—';
+    if (count === 0) return '·';
+    return count;
+  }
+
+  return (
+    <div style={S.matrixWrap}>
+      <table style={S.table}>
+        <thead>
+          <tr>
+            <th style={{...S.th, background:'#060d1a'}}></th>
+            {players.map(p => (
+              <th key={p.username} style={{...S.th, maxWidth:80}}
+                title={p.username}>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+                  <div style={{...S.dot, background: RACE_COLORS[p.raceid] || '#4488ff'}}/>
+                  <span style={{fontSize:10, maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', display:'block'}}>
+                    {p.username}
+                  </span>
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {players.map(rowP => (
+            <tr key={rowP.username}>
+              <td style={{...S.thRow}}>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <div style={{...S.dot, background: RACE_COLORS[rowP.raceid] || '#4488ff'}}/>
+                  {rowP.username}
+                </div>
+              </td>
+              {players.map(colP => {
+                const isDiag = rowP.username === colP.username;
+                const key = [rowP.username, colP.username].sort().join('||');
+                const count = isDiag ? null : (sharedGames[key] || []).length;
+                const isHov = hovered === key && !isDiag;
+                return (
+                  <td
+                    key={colP.username}
+                    style={{
+                      ...S.td,
+                      background: isDiag ? '#1a1a2a' : (isHov ? '#3a7aff44' : cellColor(count)),
+                      color: isDiag ? '#2a4a7a' : (count > 0 ? '#c8d8f0' : '#2a4a7a'),
+                      fontWeight: count > 0 ? 'bold' : 'normal',
+                      transition:'background 0.1s'
+                    }}
+                    title={!isDiag && count > 0 ? (sharedGames[key]||[]).map(g=>g.name).join(', ') : ''}
+                    onMouseEnter={() => !isDiag && setHovered(key)}
+                    onMouseLeave={() => setHovered(null)}
+                  >
+                    {isDiag ? '■' : cellText(rowP.username, colP.username, count)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{marginTop:'0.75rem',fontSize:10,color:'#2a4a7a',letterSpacing:1}}>
+        Zahl = Anzahl gemeinsamer Spiele · Hover über eine Zelle für Spielnamen
+      </div>
+    </div>
+  );
+}
+
+// ── Gemeinsame Spiele Details ────────────────────────────────────────────────
+function SharedGamesDetail({ players, sharedGames, sourceGame }) {
+  const pairs = [];
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const a = players[i], b = players[j];
+      const key = [a.username, b.username].sort().join('||');
+      const games = sharedGames[key] || [];
+      // Nur Spiele außer dem Ausgangsspiel anzeigen
+      const otherGames = games.filter(g => g.id !== sourceGame.id);
+      if (otherGames.length > 0) {
+        pairs.push({ a, b, games: otherGames });
+      }
+    }
+  }
+
+  if (pairs.length === 0) {
+    return (
+      <div style={{color:'#2a4a7a',fontSize:11,letterSpacing:1,padding:'1rem 0'}}>
+        // keine weiteren gemeinsamen Spiele gefunden
+      </div>
+    );
+  }
+
+  pairs.sort((x, y) => y.games.length - x.games.length);
+
+  return (
+    <div>
+      {pairs.map(({ a, b, games }) => (
+        <div key={`${a.username}||${b.username}`} style={{
+          background:'#060d1a', border:'0.5px solid #1a3a6a',
+          borderRadius:4, padding:'0.75rem 1rem', marginBottom:'0.5rem'
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{...S.dot, background: RACE_COLORS[a.raceid]||'#4488ff'}}/>
+            <span style={{color:'#a0c8f0',fontSize:12}}>{a.username}</span>
+            <span style={{color:'#2a4a7a',fontSize:11}}>↔</span>
+            <div style={{...S.dot, background: RACE_COLORS[b.raceid]||'#4488ff'}}/>
+            <span style={{color:'#a0c8f0',fontSize:12}}>{b.username}</span>
+            <span style={{marginLeft:'auto',color:'#3a7aff',fontSize:11,letterSpacing:1}}>
+              {games.length} gemeinsame{games.length===1?'s':''} Spiel{games.length===1?'':'e'}
+            </span>
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {games.map(g => (
+              <span key={g.id} style={{
+                background:'#0d2050', border:'0.5px solid #3a7aff44',
+                borderRadius:3, padding:'2px 8px', fontSize:10,
+                color:'#6ab0ff', letterSpacing:0.5,
+                display:'inline-flex', alignItems:'center', gap:5
+              }}>
+                {g.name}
+                <span style={{
+                  color:'#3a5a9a', fontSize:9, letterSpacing:1,
+                  borderLeft:'0.5px solid #2a4a7a', paddingLeft:5
+                }}>#{g.id}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Haupt-App ────────────────────────────────────────────────────────────────
+function App() {
+  const [gameId, setGameId]         = useState('');
+  const [loading, setLoading]       = useState(false);
+  const [progress, setProgress]     = useState('');
+  const [error, setError]           = useState('');
+  const [sourceGame, setSourceGame] = useState(null);
+  const [players, setPlayers]       = useState([]);
+  const [sharedGames, setSharedGames] = useState({});  // key: "a||b" → [game, ...]
+  const [activeTab, setActiveTab]   = useState('matrix');
+
+  const analyze = useCallback(async () => {
+    if (!gameId.trim()) return;
+    setLoading(true);
+    setError('');
+    setProgress('');
+    setSourceGame(null);
+    setPlayers([]);
+    setSharedGames({});
+
+    try {
+      // 1. Spielinfo laden
+      setProgress(`Lade Spielinfo für Game ${gameId}...`);
+      const info = await apiFetch(`/game/loadinfo?gameid=${gameId.trim()}`);
+      if (info.success === false) throw new Error(info.error || 'Spiel nicht gefunden');
+
+      const game = info.game || info;
+      const rawPlayers = info.players || [];
+
+      if (rawPlayers.length === 0) throw new Error('Keine Spieler in diesem Spiel gefunden');
+
+      setSourceGame(game);
+      setProgress(`${rawPlayers.length} Spieler gefunden. Lade Spielhistorie...`);
+
+      // 2. Für jeden Spieler alle seine Spiele laden
+      const playerGames = {};  // username → [game, ...]
+      let done = 0;
+
+      await Promise.all(rawPlayers.map(async (p) => {
+        try {
+          const data = await apiFetch(
+            `/games/list?username=${encodeURIComponent(p.username)}&status=2,3`
+          );
+          const games = Array.isArray(data) ? data : (data.games || []);
+          playerGames[p.username] = games;
+        } catch(e) {
+          playerGames[p.username] = [];
+        }
+        done++;
+        setProgress(`Spielhistorie: ${done}/${rawPlayers.length} Spieler geladen...`);
+      }));
+
+      // 3. Gemeinsame Spiele berechnen
+      setProgress('Berechne Kollaborationsmatrix...');
+      const matrix = {};
+
+      for (let i = 0; i < rawPlayers.length; i++) {
+        for (let j = i + 1; j < rawPlayers.length; j++) {
+          const a = rawPlayers[i], b = rawPlayers[j];
+          const key = [a.username, b.username].sort().join('||');
+
+          const gamesA = new Map((playerGames[a.username] || []).map(g => [g.id, g]));
+          const shared = (playerGames[b.username] || []).filter(g => gamesA.has(g.id));
+          matrix[key] = shared;
+        }
+      }
+
+      setPlayers(rawPlayers);
+      setSharedGames(matrix);
+      setProgress('');
+
+    } catch(e) {
+      setError(e.message);
+      setProgress('');
+    } finally {
+      setLoading(false);
+    }
+  }, [gameId]);
+
+  // Statistiken
+  const totalPairs = players.length * (players.length - 1) / 2;
+  const activePairs = Object.values(sharedGames).filter(g => g.length > 1).length;
+  const maxShared = Math.max(0, ...Object.values(sharedGames).map(g => g.length));
+  const totalConnections = Object.values(sharedGames).filter(g => g.length > 0).length;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={S.header}>
+        <div style={S.logoIcon}>✦</div>
+        <div>
+          <div style={S.logoText}>Planets.nu</div>
+          <div style={S.logoSub}>kollaborationsanalyse</div>
+        </div>
+      </div>
+
+      {/* Eingabe */}
+      <div style={S.card}>
+        <div style={S.sectionTitle}>// spiel analysieren</div>
+        <div style={{display:'flex', gap:'1rem', alignItems:'flex-end', flexWrap:'wrap'}}>
+          <div style={{flex:1, minWidth:200}}>
+            <label style={S.label}>Game ID</label>
+            <input
+              style={S.input}
+              type="number"
+              placeholder="z.B. 673864"
+              value={gameId}
+              onChange={e => setGameId(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
+              disabled={loading}
+            />
+          </div>
+          <button
+            style={{...S.btn, ...(loading ? S.btnDisabled : {})}}
+            onClick={analyze}
+            disabled={loading}
+          >
+            {loading ? '[ analysiere... ]' : '[ analysieren ]'}
+          </button>
+        </div>
+        {error   && <div style={S.error}>FEHLER: {error}</div>}
+        {progress && <div style={S.progress}>// {progress}</div>}
+        <div style={{marginTop:'0.75rem',fontSize:10,color:'#2a4a7a',letterSpacing:1}}>
+          Öffentlicher Endpunkt · kein Login erforderlich · Proxy muss laufen (localhost:8765)
+        </div>
+      </div>
+
+      {/* Ergebnisse */}
+      {players.length > 0 && sourceGame && (
+        <>
+          {/* Spielinfo */}
+          <div style={{...S.card, borderColor:'#3a7aff44'}}>
+            <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:'1rem'}}>
+              <div style={{fontSize:16, color:'#6ab0ff', letterSpacing:2}}>
+                {sourceGame.name || `Game ${gameId}`}
+              </div>
+              <span style={{
+                background:'#0d2a5a', border:'0.5px solid #3a7aff55',
+                borderRadius:20, padding:'2px 10px', fontSize:10,
+                color:'#6ab0ff', letterSpacing:1
+              }}>
+                {sourceGame.status === 2 ? 'Running' : sourceGame.status === 3 ? 'Finished' : '?'}
+              </span>
+            </div>
+            <div style={S.statGrid}>
+              <div style={S.statCard}>
+                <div style={S.statLabel}>Spieler</div>
+                <div style={S.statValue}>{players.length}</div>
+              </div>
+              <div style={S.statCard}>
+                <div style={S.statLabel}>Verbindungen</div>
+                <div style={{...S.statValue, color:'#4acca0'}}>{totalConnections}</div>
+              </div>
+              <div style={S.statCard}>
+                <div style={S.statLabel}>Mehrfach gespielt</div>
+                <div style={{...S.statValue, color:'#ffaa3a'}}>{activePairs}</div>
+              </div>
+              <div style={S.statCard}>
+                <div style={S.statLabel}>Max. Spiele</div>
+                <div style={S.statValue}>{maxShared}</div>
+              </div>
+            </div>
+
+            {/* Spielerliste */}
+            <div style={S.sectionTitle}>// spieler in diesem spiel</div>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:4}}>
+              {players.map(p => (
+                <div key={p.username} style={S.playerRow}>
+                  <div style={{...S.dot, background: RACE_COLORS[p.raceid]||'#4488ff'}}/>
+                  <span style={{color:'#a0c8f0'}}>{p.username}</span>
+                  <span style={{color:'#2a4a7a',fontSize:10,marginLeft:'auto'}}>
+                    {RACES[p.raceid] || `Race ${p.raceid}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={{display:'flex', gap:8, marginBottom:'1rem'}}>
+            {[['matrix','Kollaborationsmatrix'],['detail','Gemeinsame Spiele']].map(([id,label]) => (
+              <button
+                key={id}
+                style={{
+                  ...S.btn, marginTop:0,
+                  ...(activeTab===id ? {background:'#1a3a7a', color:'#a0d0ff', borderColor:'#6ab0ff'} : {})
+                }}
+                onClick={() => setActiveTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Matrix */}
+          {activeTab === 'matrix' && (
+            <div style={S.card}>
+              <div style={S.sectionTitle}>// kollaborationsmatrix</div>
+              <div style={{fontSize:10,color:'#3a6a9a',marginBottom:'1rem',letterSpacing:1}}>
+                Zellfarbe: dunkel = wenige, hell = viele gemeinsame Spiele
+              </div>
+              <div style={{display:'flex',gap:12,marginBottom:'1rem',flexWrap:'wrap'}}>
+                {[
+                  ['#0a0a1a','0 Spiele'],
+                  ['#0d2a5a','1 Spiel'],
+                  ['#1a3a7a','2 Spiele'],
+                  ['#2a5aaa','3–4 Spiele'],
+                  ['#3a7aff','5+ Spiele'],
+                ].map(([color, label]) => (
+                  <div key={label} style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'#3a6a9a'}}>
+                    <div style={{width:14,height:14,borderRadius:2,background:color,border:'0.5px solid #2a4a7a'}}/>
+                    {label}
+                  </div>
+                ))}
+              </div>
+              <Matrix players={players} sharedGames={sharedGames} />
+            </div>
+          )}
+
+          {/* Detail */}
+          {activeTab === 'detail' && (
+            <div style={S.card}>
+              <div style={S.sectionTitle}>// gemeinsame spiele (außer ausgangsspiel)</div>
+              <SharedGamesDetail
+                players={players}
+                sharedGames={sharedGames}
+                sourceGame={sourceGame}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
