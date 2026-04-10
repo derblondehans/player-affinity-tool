@@ -27,7 +27,6 @@ A public tool (no login required) that analyzes which players in a game have pla
 
 - [Node.js](https://nodejs.org) (for the local proxy)
 - A modern browser (Chrome, Firefox, Edge)
-- A [planets.nu](https://planets.nu) account *(only for the game client)*
 
 ---
 
@@ -52,7 +51,7 @@ Keep this terminal window open while using the tools.
 
 ### 2. Open the tool
 
-Open `vga_planets_client_local.html` or `planets_matrix.html` directly in your browser (double-click or `File → Open`).
+Open  `planets_matrix.html` directly in your browser (double-click or `File → Open`).
 
 > **Note for Bitdefender / antivirus users:** The proxy runs entirely on your local machine. No data is sent to any external proxy service. If your antivirus blocks `localhost:8765`, add it as an exception.
 
@@ -76,7 +75,6 @@ The proxy:
 
 | Endpoint | Auth required | Description |
 |---|---|---|
-| `/account/login` | No | Returns API key for subsequent requests |
 | `/games/list` | No | Lists games for a given username |
 | `/game/loadinfo` | No | Public game info and player list |
 | `/game/loadturn` | Yes (apikey) | Full turn data including map objects |
