@@ -77,7 +77,6 @@ The proxy:
 |---|---|---|
 | `/games/list` | No | Lists games for a given username |
 | `/game/loadinfo` | No | Public game info and player list |
-| `/game/loadturn` | Yes (apikey) | Full turn data including map objects |
 
 All endpoints are part of the official [Planets.nu API](https://help.planets.nu/API).
 
