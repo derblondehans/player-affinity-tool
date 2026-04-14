@@ -103,6 +103,91 @@
 <script type="text/babel">
 const { useState, useCallback } = React;
 
+// ── Internationalisierung ────────────────────────────────────────────────────
+const LANG = (navigator.language || 'en').startsWith('de') ? 'de' : 'en';
+const T = {
+  de: {
+    subtitle:          'kollaborationsanalyse',
+    sectionAnalyze:    '// spiel analysieren',
+    gameIdLabel:       'Game ID',
+    gameIdPlaceholder: 'z.B. 633855',
+    btnAnalyze:        '[ analysieren ]',
+    btnAnalyzing:      '[ analysiere... ]',
+    proxyNote:         'Öffentlicher Endpunkt · kein Login erforderlich · Proxy muss laufen (localhost:8765)',
+    errNotFound:       'Spiel nicht gefunden',
+    errNoPlayers:      'Keine Spieler in diesem Spiel gefunden',
+    progressLoad:      (id)      => `Lade Spielinfo für Game ${id}...`,
+    progressFound:     (n)       => `${n} Spieler gefunden (inkl. tote). Lade Spielhistorie...`,
+    progressHistory:   (d, t)    => `Spielhistorie: ${d}/${t} Spieler geladen...`,
+    progressMatrix:    'Berechne Kollaborationsmatrix...',
+    progressDone:      '',
+    statPlayers:       'Spieler',
+    statConnections:   'Verbindungen',
+    statMultiple:      'Mehrfach gespielt',
+    statMax:           'Max. Spiele',
+    sectionPlayers:    '// spieler in diesem spiel',
+    dead:              '†',
+    deadTitle:         (u) => `${u} (gestorben)`,
+    tabMatrix:         'Kollaborationsmatrix',
+    tabDetail:         'Gemeinsame Spiele',
+    sectionMatrix:     '// kollaborationsmatrix',
+    matrixHint:        'Zellfarbe: dunkel = wenige, hell = viele gemeinsame Spiele',
+    matrixDeadHint:    '† = Spieler ist in diesem Spiel gestorben oder wurde ersetzt',
+    matrixFooter:      'Zahl = Anzahl gemeinsamer Spiele · Hover über eine Zelle für Spielnamen',
+    legendLabels:      ['0 Spiele','1 Spiel','2 Spiele','3–4 Spiele','5+ Spiele'],
+    sectionDetail:     '// gemeinsame spiele (außer ausgangsspiel)',
+    noDetail:          '// keine weiteren gemeinsamen Spiele gefunden',
+    sharedCount:       (n) => `${n} gemeinsame${n===1?'s':''} Spiel${n===1?'':'e'}`,
+    loading:           'laden...',
+    turns:             (f, t, d) => `Turn ${f} – ${t} (${d} Turns)`,
+    noOverlap:         'keine Überschneidung',
+    infoUnavailable:   'Infos nicht verfügbar',
+    spinnerGames:      'lade Spieleliste...',
+    spinnerMap:        'laden...',
+    emptyResponse:     'Leere Antwort',
+  },
+  en: {
+    subtitle:          'collaboration analysis',
+    sectionAnalyze:    '// analyze game',
+    gameIdLabel:       'Game ID',
+    gameIdPlaceholder: 'e.g. 633855',
+    btnAnalyze:        '[ analyze ]',
+    btnAnalyzing:      '[ analyzing... ]',
+    proxyNote:         'Public endpoint · no login required · proxy must be running (localhost:8765)',
+    errNotFound:       'Game not found',
+    errNoPlayers:      'No players found in this game',
+    progressLoad:      (id)      => `Loading game info for game ${id}...`,
+    progressFound:     (n)       => `${n} players found (incl. dead). Loading game history...`,
+    progressHistory:   (d, t)    => `Game history: ${d}/${t} players loaded...`,
+    progressMatrix:    'Calculating collaboration matrix...',
+    progressDone:      '',
+    statPlayers:       'Players',
+    statConnections:   'Connections',
+    statMultiple:      'Played multiple times',
+    statMax:           'Max. games',
+    sectionPlayers:    '// players in this game',
+    dead:              '†',
+    deadTitle:         (u) => `${u} (eliminated)`,
+    tabMatrix:         'Collaboration Matrix',
+    tabDetail:         'Shared Games',
+    sectionMatrix:     '// collaboration matrix',
+    matrixHint:        'Cell color: dark = few, bright = many shared games',
+    matrixDeadHint:    '† = player was eliminated or replaced in this game',
+    matrixFooter:      'Number = shared games · Hover a cell for game names',
+    legendLabels:      ['0 games','1 game','2 games','3–4 games','5+ games'],
+    sectionDetail:     '// shared games (excluding source game)',
+    noDetail:          '// no additional shared games found',
+    sharedCount:       (n) => `${n} shared game${n===1?'':'s'}`,
+    loading:           'loading...',
+    turns:             (f, t, d) => `Turn ${f} – ${t} (${d} turns)`,
+    noOverlap:         'no overlap',
+    infoUnavailable:   'info unavailable',
+    spinnerGames:      'loading game list...',
+    spinnerMap:        'loading...',
+    emptyResponse:     'Empty response',
+  }
+}[LANG];
+
 const PROXY = 'http://localhost:8765';
 
 async function apiFetch(path) {
@@ -113,7 +198,7 @@ async function apiFetch(path) {
     clearTimeout(timer);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const text = await r.text();
-    if (!text.trim()) throw new Error('Leere Antwort');
+    if (!text.trim()) throw new Error(T.emptyResponse);
     return JSON.parse(text);
   } catch(e) {
     clearTimeout(timer);
@@ -232,11 +317,11 @@ function Spinner({ text }) {
   );
 }
 
-// ── Kollaborationsmatrix ─────────────────────────────────────────────────────
+// ── Collaboration Matrix ────────────────────────────────────────────────────
 function Matrix({ players, sharedGames }) {
   const [hovered, setHovered] = useState(null);
 
-  // Zellfarbe nach Anzahl gemeinsamer Spiele
+  // Cell color by number of shared games
   function cellColor(count) {
     if (count === 0) return '#0a0a1a';
     if (count === 1) return '#0d2a5a';
@@ -259,12 +344,12 @@ function Matrix({ players, sharedGames }) {
             <th style={{...S.th, background:'#060d1a'}}></th>
             {players.map(p => (
               <th key={p._key || p.username} style={{...S.th, maxWidth:80}}
-                title={p.isDead ? `${p.username} (gestorben)` : p.username}>
+                title={p.isDead ? T.deadTitle(p.username) : p.username}>
                 <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
                   <div style={{...S.dot, background: p.isDead ? '#3a5a7a' : (RACE_COLORS[p.raceid] || '#4488ff')}}/>
                   <span style={{fontSize:10, maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', display:'block',
                     color: p.isDead ? '#4a6a8a' : '#3a6a9a'}}>
-                    {p.username}{p.isDead ? ' †' : ''}
+                    {p.username}{p.isDead ? ` ${T.dead}` : ''}
                   </span>
                 </div>
               </th>
@@ -308,15 +393,14 @@ function Matrix({ players, sharedGames }) {
         </tbody>
       </table>
       <div style={{marginTop:'0.75rem',fontSize:10,color:'#2a4a7a',letterSpacing:1}}>
-        Zahl = Anzahl gemeinsamer Spiele · Hover über eine Zelle für Spielnamen
+        {T.matrixFooter}
       </div>
     </div>
   );
 }
 
 // ── Gemeinsame Spiele Details ────────────────────────────────────────────────
-// Ermittelt Turn-Überschneidung zweier Spieler in einem Spiel
-// anhand der players-Liste aus loadinfo
+// Calculates turn overlap of two players in a game
 function getTurnOverlap(gameInfo, usernameA, usernameB) {
   if (!gameInfo || !gameInfo.players) return null;
   const players  = gameInfo.players;
@@ -430,7 +514,7 @@ function SharedGamesDetail({ players, sharedGames, sourceGame, gameInfoCache, se
   if (pairs.length === 0) {
     return (
       <div style={{color:'#2a4a7a',fontSize:11,letterSpacing:1,padding:'1rem 0'}}>
-        // keine weiteren gemeinsamen Spiele gefunden
+        {T.noDetail}
       </div>
     );
   }
@@ -446,12 +530,12 @@ function SharedGamesDetail({ players, sharedGames, sourceGame, gameInfoCache, se
         }}>
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
             <div style={{...S.dot, background: a.isDead ? '#3a5a7a' : (RACE_COLORS[a.raceid]||'#4488ff')}}/>
-            <span style={{color: a.isDead?'#5a7a9a':'#a0c8f0',fontSize:12}}>{a.username}{a.isDead?' †':''}</span>
+            <span style={{color: a.isDead?'#5a7a9a':'#a0c8f0',fontSize:12}}>{a.username}{a.isDead?` ${T.dead}`:''}</span>
             <span style={{color:'#2a4a7a',fontSize:11}}>↔</span>
             <div style={{...S.dot, background: b.isDead ? '#3a5a7a' : (RACE_COLORS[b.raceid]||'#4488ff')}}/>
-            <span style={{color: b.isDead?'#5a7a9a':'#a0c8f0',fontSize:12}}>{b.username}{b.isDead?' †':''}</span>
+            <span style={{color: b.isDead?'#5a7a9a':'#a0c8f0',fontSize:12}}>{b.username}{b.isDead?` ${T.dead}`:''}</span>
             <span style={{marginLeft:'auto',color:'#3a7aff',fontSize:11,letterSpacing:1}}>
-              {games.length} gemeinsame{games.length===1?'s':''} Spiel{games.length===1?'':'e'}
+              {T.sharedCount(games.length)}
             </span>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -475,24 +559,21 @@ function SharedGamesDetail({ players, sharedGames, sourceGame, gameInfoCache, se
                   </div>
                   {/* Turn-Überschneidung */}
                   {isLoad && (
-                    <span style={{fontSize:10,color:'#2a4a7a',letterSpacing:1}}>laden...</span>
+                    <span style={{fontSize:10,color:'#2a4a7a',letterSpacing:1}}>{T.loading}</span>
                   )}
                   {!isLoad && overlap && (
                     <span style={{
                       fontSize:10, letterSpacing:1,
                       color: overlap.from === overlap.to ? '#ffaa3a' : '#4acca0'
                     }}>
-                      Turn {overlap.from} – {overlap.to}
-                      <span style={{color:'#2a4a7a',marginLeft:6}}>
-                        ({overlap.to - overlap.from + 1} Turns)
-                      </span>
+                      {T.turns(overlap.from, overlap.to, overlap.to - overlap.from + 1)}
                     </span>
                   )}
                   {!isLoad && info && !overlap && (
-                    <span style={{fontSize:10,color:'#3a5a7a',letterSpacing:1}}>keine Überschneidung</span>
+                    <span style={{fontSize:10,color:'#3a5a7a',letterSpacing:1}}>{T.noOverlap}</span>
                   )}
                   {!isLoad && info === null && (
-                    <span style={{fontSize:10,color:'#7a3a3a',letterSpacing:1}}>Infos nicht verfügbar</span>
+                    <span style={{fontSize:10,color:'#7a3a3a',letterSpacing:1}}>{T.infoUnavailable}</span>
                   )}
                 </div>
               );
@@ -527,15 +608,15 @@ function App() {
 
     try {
       // 1. Spielinfo laden
-      setProgress(`Lade Spielinfo für Game ${gameId}...`);
+      setProgress(T.progressLoad(gameId.trim()));
       const info = await apiFetch(`/game/loadinfo?gameid=${gameId.trim()}`);
-      if (info.success === false) throw new Error(info.error || 'Spiel nicht gefunden');
+      if (info.success === false) throw new Error(info.error || T.errNotFound);
 
       const game = info.game || info;
       const rawPlayers = info.players || [];
       const events    = info.events  || [];
 
-      if (rawPlayers.length === 0) throw new Error('Keine Spieler in diesem Spiel gefunden');
+      if (rawPlayers.length === 0) throw new Error(T.errNoPlayers);
 
       // 2. Echte Usernamen aus Events ermitteln (für tote Spieler)
       // eventtype 3 = Join, 10 = Drop. Der Username steht im description-Text.
@@ -586,7 +667,7 @@ function App() {
       });
 
       setSourceGame(game);
-      setProgress(`${uniquePlayers.length} Spieler gefunden (inkl. tote). Lade Spielhistorie...`);
+      setProgress(T.progressFound(uniquePlayers.length));
 
       // 4. Für jeden Spieler alle seine Spiele laden
       const playerGames = {};
@@ -603,11 +684,11 @@ function App() {
           playerGames[p.username] = [];
         }
         done++;
-        setProgress(`Spielhistorie: ${done}/${uniquePlayers.length} Spieler geladen...`);
+        setProgress(T.progressHistory(done, uniquePlayers.length));
       }));
 
       // 5. Gemeinsame Spiele berechnen
-      setProgress('Berechne Kollaborationsmatrix...');
+      setProgress(T.progressMatrix);
       const matrix = {};
 
       for (let i = 0; i < uniquePlayers.length; i++) {
@@ -647,21 +728,21 @@ function App() {
         <div style={S.logoIcon}>✦</div>
         <div>
           <div style={S.logoText}>Planets.nu</div>
-          <div style={S.logoSub}>kollaborationsanalyse</div>
+          <div style={S.logoSub}>{T.subtitle}</div>
           <div style={{fontSize:9, color:'#2a4a6a', letterSpacing:2, marginTop:2}}>v1.1</div>
         </div>
       </div>
 
       {/* Eingabe */}
       <div style={S.card}>
-        <div style={S.sectionTitle}>// spiel analysieren</div>
+        <div style={S.sectionTitle}>{T.sectionAnalyze}</div>
         <div style={{display:'flex', gap:'1rem', alignItems:'flex-end', flexWrap:'wrap'}}>
           <div style={{flex:1, minWidth:200}}>
-            <label style={S.label}>Game ID</label>
+            <label style={S.label}>{T.gameIdLabel}</label>
             <input
               style={S.input}
               type="number"
-              placeholder="z.B. 673864"
+              placeholder={T.gameIdPlaceholder}
               value={gameId}
               onChange={e => setGameId(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !loading && analyze()}
@@ -673,13 +754,13 @@ function App() {
             onClick={analyze}
             disabled={loading}
           >
-            {loading ? '[ analysiere... ]' : '[ analysieren ]'}
+            {loading ? T.btnAnalyzing : T.btnAnalyze}
           </button>
         </div>
         {error   && <div style={S.error}>FEHLER: {error}</div>}
         {progress && <div style={S.progress}>// {progress}</div>}
         <div style={{marginTop:'0.75rem',fontSize:10,color:'#2a4a7a',letterSpacing:1}}>
-          Öffentlicher Endpunkt · kein Login erforderlich · Proxy muss laufen (localhost:8765)
+          {T.proxyNote}
         </div>
       </div>
 
@@ -702,25 +783,25 @@ function App() {
             </div>
             <div style={S.statGrid}>
               <div style={S.statCard}>
-                <div style={S.statLabel}>Spieler</div>
+                <div style={S.statLabel}>{T.statPlayers}</div>
                 <div style={S.statValue}>{players.length}</div>
               </div>
               <div style={S.statCard}>
-                <div style={S.statLabel}>Verbindungen</div>
+                <div style={S.statLabel}>{T.statConnections}</div>
                 <div style={{...S.statValue, color:'#4acca0'}}>{totalConnections}</div>
               </div>
               <div style={S.statCard}>
-                <div style={S.statLabel}>Mehrfach gespielt</div>
+                <div style={S.statLabel}>{T.statMultiple}</div>
                 <div style={{...S.statValue, color:'#ffaa3a'}}>{activePairs}</div>
               </div>
               <div style={S.statCard}>
-                <div style={S.statLabel}>Max. Spiele</div>
+                <div style={S.statLabel}>{T.statMax}</div>
                 <div style={S.statValue}>{maxShared}</div>
               </div>
             </div>
 
             {/* Spielerliste */}
-            <div style={S.sectionTitle}>// spieler in diesem spiel</div>
+            <div style={S.sectionTitle}>{T.sectionPlayers}</div>
             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:4}}>
               {players.map(p => (
                 <div key={p._key || p.username} style={S.playerRow}>
@@ -728,7 +809,7 @@ function App() {
                   <span style={{color: p.isDead ? '#5a7a9a' : '#a0c8f0'}}>
                     {p.username}
                   </span>
-                  {p.isDead && <span style={{fontSize:9,color:'#3a5a7a',letterSpacing:1,marginLeft:'auto'}}>†</span>}
+                  {p.isDead && <span style={{fontSize:9,color:'#3a5a7a',letterSpacing:1,marginLeft:'auto'}}>{T.dead}</span>}
                   <span style={{color:'#2a4a7a',fontSize:10,marginLeft:'auto'}}>
                     {RACES[p.raceid] || `Race ${p.raceid}`}
                   </span>
@@ -739,7 +820,7 @@ function App() {
 
           {/* Tabs */}
           <div style={{display:'flex', gap:8, marginBottom:'1rem'}}>
-            {[['matrix','Kollaborationsmatrix'],['detail','Gemeinsame Spiele']].map(([id,label]) => (
+            {[['matrix', T.tabMatrix], ['detail', T.tabDetail]].map(([id,label]) => (
               <button
                 key={id}
                 style={{
@@ -756,20 +837,20 @@ function App() {
           {/* Matrix */}
           {activeTab === 'matrix' && (
             <div style={S.card}>
-              <div style={S.sectionTitle}>// kollaborationsmatrix</div>
+              <div style={S.sectionTitle}>{T.sectionMatrix}</div>
               <div style={{fontSize:10,color:'#3a6a9a',marginBottom:'1rem',letterSpacing:1}}>
-                Zellfarbe: dunkel = wenige, hell = viele gemeinsame Spiele
+                {T.matrixHint}
               </div>
               <div style={{fontSize:10,color:'#3a5a7a',marginBottom:'1rem',letterSpacing:1}}>
-                † = Spieler ist in diesem Spiel gestorben oder wurde ersetzt
+                {T.matrixDeadHint}
               </div>
               <div style={{display:'flex',gap:12,marginBottom:'1rem',flexWrap:'wrap'}}>
                 {[
-                  ['#0a0a1a','0 Spiele'],
-                  ['#0d2a5a','1 Spiel'],
-                  ['#1a3a7a','2 Spiele'],
-                  ['#2a5aaa','3–4 Spiele'],
-                  ['#3a7aff','5+ Spiele'],
+                  ['#0a0a1a', T.legendLabels[0]],
+                  ['#0d2a5a', T.legendLabels[1]],
+                  ['#1a3a7a', T.legendLabels[2]],
+                  ['#2a5aaa', T.legendLabels[3]],
+                  ['#3a7aff', T.legendLabels[4]],
                 ].map(([color, label]) => (
                   <div key={label} style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:'#3a6a9a'}}>
                     <div style={{width:14,height:14,borderRadius:2,background:color,border:'0.5px solid #2a4a7a'}}/>
@@ -784,7 +865,7 @@ function App() {
           {/* Detail */}
           {activeTab === 'detail' && (
             <div style={S.card}>
-              <div style={S.sectionTitle}>// gemeinsame spiele (außer ausgangsspiel)</div>
+              <div style={S.sectionTitle}>{T.sectionDetail}</div>
               <SharedGamesDetail
                 players={players}
                 sharedGames={sharedGames}
