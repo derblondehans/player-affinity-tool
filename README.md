@@ -6,6 +6,12 @@ Thx to Joshua, who made it a browser game.
 Thx to Whisperer, who wrote the initial version of this tool.
 Thx to all supporters of VGA Planets!
 
+## Update
+
+### Version 1.1
+- Fixed bug with dead players and replacement players
+- Added number of turns players played during a game together
+
 ---
 
 ## Tools
