@@ -12,6 +12,9 @@ Thx to all supporters of VGA Planets!
 - Fixed bug with dead players and replacement players
 - Added number of turns players played during a game together
 
+### Version 1.2
+- Added I18N for English and German
+
 ---
 
 ## Tools
