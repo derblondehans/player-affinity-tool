@@ -258,12 +258,13 @@ function Matrix({ players, sharedGames }) {
           <tr>
             <th style={{...S.th, background:'#060d1a'}}></th>
             {players.map(p => (
-              <th key={p.username} style={{...S.th, maxWidth:80}}
-                title={p.username}>
+              <th key={p._key || p.username} style={{...S.th, maxWidth:80}}
+                title={p.isDead ? `${p.username} (gestorben)` : p.username}>
                 <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-                  <div style={{...S.dot, background: RACE_COLORS[p.raceid] || '#4488ff'}}/>
-                  <span style={{fontSize:10, maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', display:'block'}}>
-                    {p.username}
+                  <div style={{...S.dot, background: p.isDead ? '#3a5a7a' : (RACE_COLORS[p.raceid] || '#4488ff')}}/>
+                  <span style={{fontSize:10, maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', display:'block',
+                    color: p.isDead ? '#4a6a8a' : '#3a6a9a'}}>
+                    {p.username}{p.isDead ? ' †' : ''}
                   </span>
                 </div>
               </th>
@@ -314,18 +315,115 @@ function Matrix({ players, sharedGames }) {
 }
 
 // ── Gemeinsame Spiele Details ────────────────────────────────────────────────
-function SharedGamesDetail({ players, sharedGames, sourceGame }) {
+// Ermittelt Turn-Überschneidung zweier Spieler in einem Spiel
+// anhand der players-Liste aus loadinfo
+function getTurnOverlap(gameInfo, usernameA, usernameB) {
+  if (!gameInfo || !gameInfo.players) return null;
+  const players  = gameInfo.players;
+  const events   = gameInfo.events || [];
+  const gameTurn = (gameInfo.game || gameInfo).turn || 999;
+
+  // Für einen Username alle Perioden (turnJoined→turnLeft) ermitteln
+  // Berücksichtigt Replace-Spieler (mehrfacher Join/Drop)
+  function getPeriodsForUser(username) {
+    const periods = [];
+    // Aus events: join/drop-Paare bauen
+    const userEvents = events
+      .filter(ev => {
+        if (ev.eventtype !== 3 && ev.eventtype !== 10 && ev.eventtype !== 7) return false;
+        const m = ev.description.match(/^(.+?) has (joined|been dropped|won)/);
+        return m && m[1].trim() === username;
+      })
+      .sort((a, b) => a.turn - b.turn);
+
+    let joinTurn = null;
+    userEvents.forEach(ev => {
+      const m = ev.description.match(/^(.+?) has (joined|been dropped)/);
+      if (!m) return;
+      if (m[2] === 'joined') {
+        joinTurn = ev.turn;
+      } else if (m[2] === 'been dropped' && joinTurn !== null) {
+        periods.push({ from: joinTurn, to: ev.turn });
+        joinTurn = null;
+      }
+    });
+    // Noch aktiv (kein Drop-Event nach letztem Join)
+    if (joinTurn !== null) {
+      // Aus players-Array turnjoined + statusturn lesen als Fallback
+      const pp = players.find(p => p.username === username);
+      const to = (pp && pp.status !== 1) ? pp.statusturn : gameTurn;
+      periods.push({ from: joinTurn, to });
+    }
+
+    // Fallback: aus players-Array direkt
+    if (periods.length === 0) {
+      const pp = players.find(p => p.username === username);
+      if (pp) {
+        periods.push({
+          from: pp.turnjoined || 1,
+          to: pp.status !== 1 ? pp.statusturn : gameTurn
+        });
+      }
+    }
+    return periods;
+  }
+
+  // Überschneidung zweier Perioden-Listen berechnen
+  function overlap(periodsA, periodsB) {
+    let minFrom = Infinity, maxTo = -Infinity;
+    let found = false;
+    periodsA.forEach(a => {
+      periodsB.forEach(b => {
+        const from = Math.max(a.from, b.from);
+        const to   = Math.min(a.to,   b.to);
+        if (from <= to) {
+          minFrom = Math.min(minFrom, from);
+          maxTo   = Math.max(maxTo,   to);
+          found   = true;
+        }
+      });
+    });
+    return found ? { from: minFrom, to: maxTo } : null;
+  }
+
+  const periodsA = getPeriodsForUser(usernameA);
+  const periodsB = getPeriodsForUser(usernameB);
+  return overlap(periodsA, periodsB);
+}
+
+function SharedGamesDetail({ players, sharedGames, sourceGame, gameInfoCache, setGameInfoCache }) {
+  const [loading, setLoading] = useState({});
+
+  // Lädt gameInfo für ein Spiel falls noch nicht gecacht
+  const ensureGameInfo = async (gameId) => {
+    if (gameInfoCache[gameId]) return;
+    setLoading(prev => ({...prev, [gameId]: true}));
+    try {
+      const info = await apiFetch(`/game/loadinfo?gameid=${gameId}`);
+      setGameInfoCache(prev => ({...prev, [gameId]: info}));
+    } catch(e) {
+      setGameInfoCache(prev => ({...prev, [gameId]: null}));
+    }
+    setLoading(prev => ({...prev, [gameId]: false}));
+  };
+
+  // Alle gemeinsamen Spiele beim ersten Render laden
+  React.useEffect(() => {
+    const allGameIds = new Set();
+    Object.values(sharedGames).forEach(games =>
+      games.forEach(g => allGameIds.add(g.id))
+    );
+    allGameIds.forEach(id => ensureGameInfo(id));
+  }, [sharedGames]);
+
   const pairs = [];
   for (let i = 0; i < players.length; i++) {
     for (let j = i + 1; j < players.length; j++) {
       const a = players[i], b = players[j];
       const key = [a.username, b.username].sort().join('||');
       const games = sharedGames[key] || [];
-      // Nur Spiele außer dem Ausgangsspiel anzeigen
       const otherGames = games.filter(g => g.id !== sourceGame.id);
-      if (otherGames.length > 0) {
-        pairs.push({ a, b, games: otherGames });
-      }
+      if (otherGames.length > 0) pairs.push({ a, b, games: otherGames });
     }
   }
 
@@ -346,31 +444,59 @@ function SharedGamesDetail({ players, sharedGames, sourceGame }) {
           background:'#060d1a', border:'0.5px solid #1a3a6a',
           borderRadius:4, padding:'0.75rem 1rem', marginBottom:'0.5rem'
         }}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-            <div style={{...S.dot, background: RACE_COLORS[a.raceid]||'#4488ff'}}/>
-            <span style={{color:'#a0c8f0',fontSize:12}}>{a.username}</span>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+            <div style={{...S.dot, background: a.isDead ? '#3a5a7a' : (RACE_COLORS[a.raceid]||'#4488ff')}}/>
+            <span style={{color: a.isDead?'#5a7a9a':'#a0c8f0',fontSize:12}}>{a.username}{a.isDead?' †':''}</span>
             <span style={{color:'#2a4a7a',fontSize:11}}>↔</span>
-            <div style={{...S.dot, background: RACE_COLORS[b.raceid]||'#4488ff'}}/>
-            <span style={{color:'#a0c8f0',fontSize:12}}>{b.username}</span>
+            <div style={{...S.dot, background: b.isDead ? '#3a5a7a' : (RACE_COLORS[b.raceid]||'#4488ff')}}/>
+            <span style={{color: b.isDead?'#5a7a9a':'#a0c8f0',fontSize:12}}>{b.username}{b.isDead?' †':''}</span>
             <span style={{marginLeft:'auto',color:'#3a7aff',fontSize:11,letterSpacing:1}}>
               {games.length} gemeinsame{games.length===1?'s':''} Spiel{games.length===1?'':'e'}
             </span>
           </div>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-            {games.map(g => (
-              <span key={g.id} style={{
-                background:'#0d2050', border:'0.5px solid #3a7aff44',
-                borderRadius:3, padding:'2px 8px', fontSize:10,
-                color:'#6ab0ff', letterSpacing:0.5,
-                display:'inline-flex', alignItems:'center', gap:5
-              }}>
-                {g.name}
-                <span style={{
-                  color:'#3a5a9a', fontSize:9, letterSpacing:1,
-                  borderLeft:'0.5px solid #2a4a7a', paddingLeft:5
-                }}>#{g.id}</span>
-              </span>
-            ))}
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {games.map(g => {
+              const info    = gameInfoCache[g.id];
+              const isLoad  = loading[g.id];
+              const overlap = info ? getTurnOverlap(info, a.username, b.username) : null;
+              return (
+                <div key={g.id} style={{
+                  background:'#0a0f20', border:'0.5px solid #1a3a6a',
+                  borderRadius:4, padding:'6px 10px',
+                  display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'
+                }}>
+                  {/* Spielname + ID */}
+                  <div style={{display:'inline-flex',alignItems:'center',gap:5,flex:1,minWidth:120}}>
+                    <span style={{fontSize:11,color:'#6ab0ff',letterSpacing:0.5}}>{g.name}</span>
+                    <span style={{
+                      color:'#3a5a9a', fontSize:9, letterSpacing:1,
+                      borderLeft:'0.5px solid #2a4a7a', paddingLeft:5
+                    }}>#{g.id}</span>
+                  </div>
+                  {/* Turn-Überschneidung */}
+                  {isLoad && (
+                    <span style={{fontSize:10,color:'#2a4a7a',letterSpacing:1}}>laden...</span>
+                  )}
+                  {!isLoad && overlap && (
+                    <span style={{
+                      fontSize:10, letterSpacing:1,
+                      color: overlap.from === overlap.to ? '#ffaa3a' : '#4acca0'
+                    }}>
+                      Turn {overlap.from} – {overlap.to}
+                      <span style={{color:'#2a4a7a',marginLeft:6}}>
+                        ({overlap.to - overlap.from + 1} Turns)
+                      </span>
+                    </span>
+                  )}
+                  {!isLoad && info && !overlap && (
+                    <span style={{fontSize:10,color:'#3a5a7a',letterSpacing:1}}>keine Überschneidung</span>
+                  )}
+                  {!isLoad && info === null && (
+                    <span style={{fontSize:10,color:'#7a3a3a',letterSpacing:1}}>Infos nicht verfügbar</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}
@@ -388,6 +514,7 @@ function App() {
   const [players, setPlayers]       = useState([]);
   const [sharedGames, setSharedGames] = useState({});  // key: "a||b" → [game, ...]
   const [activeTab, setActiveTab]   = useState('matrix');
+  const [gameInfoCache, setGameInfoCache] = useState({});  // gameid → {players:[]}
 
   const analyze = useCallback(async () => {
     if (!gameId.trim()) return;
@@ -406,17 +533,66 @@ function App() {
 
       const game = info.game || info;
       const rawPlayers = info.players || [];
+      const events    = info.events  || [];
 
       if (rawPlayers.length === 0) throw new Error('Keine Spieler in diesem Spiel gefunden');
 
-      setSourceGame(game);
-      setProgress(`${rawPlayers.length} Spieler gefunden. Lade Spielhistorie...`);
+      // 2. Echte Usernamen aus Events ermitteln (für tote Spieler)
+      // eventtype 3 = Join, 10 = Drop. Der Username steht im description-Text.
+      // Format: "username has joined the game in slot X as Race"
+      // Wir bauen eine Map: slotId (playerid) → Set von echten Usernamen
+      const slotUsers = {};  // playerid → Set<username>
+      events.forEach(ev => {
+        if (ev.eventtype === 3 || ev.eventtype === 10) {
+          // Username ist vor " has " im description
+          const match = ev.description.match(/^(.+?) has (joined|been dropped)/);
+          if (match && ev.playerid > 0) {
+            const uname = match[1].trim();
+            if (!slotUsers[ev.playerid]) slotUsers[ev.playerid] = new Set();
+            slotUsers[ev.playerid].add(uname);
+          }
+        }
+      });
 
-      // 2. Für jeden Spieler alle seine Spiele laden
-      const playerGames = {};  // username → [game, ...]
+      // 3. Spielerliste aufbauen — tote Spieler mit echtem Namen ergänzen
+      // Ein Slot kann mehrere Spieler haben (Replace-Spieler) → alle einbeziehen
+      const allPlayers = [];
+      rawPlayers.forEach(p => {
+        if (p.username !== 'dead' && p.isregistered) {
+          // Lebender Spieler: direkt übernehmen
+          allPlayers.push({ ...p, isDead: false, slotid: p.id });
+        } else {
+          // Toter/erloschener Slot: alle echten Usernamen aus Events holen
+          const users = slotUsers[p.id] ? [...slotUsers[p.id]] : [];
+          users.forEach(uname => {
+            allPlayers.push({
+              ...p,
+              username: uname,
+              isDead: true,
+              slotid: p.id,
+              // Eindeutiger Key für React
+              _key: `${p.id}_${uname}`,
+            });
+          });
+        }
+      });
+
+      // Duplikate entfernen (gleicher Username kann in zwei Slots aufgetaucht sein)
+      const seen = new Set();
+      const uniquePlayers = allPlayers.filter(p => {
+        if (seen.has(p.username)) return false;
+        seen.add(p.username);
+        return true;
+      });
+
+      setSourceGame(game);
+      setProgress(`${uniquePlayers.length} Spieler gefunden (inkl. tote). Lade Spielhistorie...`);
+
+      // 4. Für jeden Spieler alle seine Spiele laden
+      const playerGames = {};
       let done = 0;
 
-      await Promise.all(rawPlayers.map(async (p) => {
+      await Promise.all(uniquePlayers.map(async (p) => {
         try {
           const data = await apiFetch(
             `/games/list?username=${encodeURIComponent(p.username)}&status=2,3`
@@ -427,16 +603,16 @@ function App() {
           playerGames[p.username] = [];
         }
         done++;
-        setProgress(`Spielhistorie: ${done}/${rawPlayers.length} Spieler geladen...`);
+        setProgress(`Spielhistorie: ${done}/${uniquePlayers.length} Spieler geladen...`);
       }));
 
-      // 3. Gemeinsame Spiele berechnen
+      // 5. Gemeinsame Spiele berechnen
       setProgress('Berechne Kollaborationsmatrix...');
       const matrix = {};
 
-      for (let i = 0; i < rawPlayers.length; i++) {
-        for (let j = i + 1; j < rawPlayers.length; j++) {
-          const a = rawPlayers[i], b = rawPlayers[j];
+      for (let i = 0; i < uniquePlayers.length; i++) {
+        for (let j = i + 1; j < uniquePlayers.length; j++) {
+          const a = uniquePlayers[i], b = uniquePlayers[j];
           const key = [a.username, b.username].sort().join('||');
 
           const gamesA = new Map((playerGames[a.username] || []).map(g => [g.id, g]));
@@ -445,7 +621,8 @@ function App() {
         }
       }
 
-      setPlayers(rawPlayers);
+      setPlayers(uniquePlayers);
+      setGameInfoCache({});  // wird lazy befüllt beim Anzeigen
       setSharedGames(matrix);
       setProgress('');
 
@@ -471,6 +648,7 @@ function App() {
         <div>
           <div style={S.logoText}>Planets.nu</div>
           <div style={S.logoSub}>kollaborationsanalyse</div>
+          <div style={{fontSize:9, color:'#2a4a6a', letterSpacing:2, marginTop:2}}>v1.1</div>
         </div>
       </div>
 
@@ -545,9 +723,12 @@ function App() {
             <div style={S.sectionTitle}>// spieler in diesem spiel</div>
             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:4}}>
               {players.map(p => (
-                <div key={p.username} style={S.playerRow}>
-                  <div style={{...S.dot, background: RACE_COLORS[p.raceid]||'#4488ff'}}/>
-                  <span style={{color:'#a0c8f0'}}>{p.username}</span>
+                <div key={p._key || p.username} style={S.playerRow}>
+                  <div style={{...S.dot, background: p.isDead ? '#3a5a7a' : (RACE_COLORS[p.raceid]||'#4488ff')}}/>
+                  <span style={{color: p.isDead ? '#5a7a9a' : '#a0c8f0'}}>
+                    {p.username}
+                  </span>
+                  {p.isDead && <span style={{fontSize:9,color:'#3a5a7a',letterSpacing:1,marginLeft:'auto'}}>†</span>}
                   <span style={{color:'#2a4a7a',fontSize:10,marginLeft:'auto'}}>
                     {RACES[p.raceid] || `Race ${p.raceid}`}
                   </span>
@@ -579,6 +760,9 @@ function App() {
               <div style={{fontSize:10,color:'#3a6a9a',marginBottom:'1rem',letterSpacing:1}}>
                 Zellfarbe: dunkel = wenige, hell = viele gemeinsame Spiele
               </div>
+              <div style={{fontSize:10,color:'#3a5a7a',marginBottom:'1rem',letterSpacing:1}}>
+                † = Spieler ist in diesem Spiel gestorben oder wurde ersetzt
+              </div>
               <div style={{display:'flex',gap:12,marginBottom:'1rem',flexWrap:'wrap'}}>
                 {[
                   ['#0a0a1a','0 Spiele'],
@@ -605,6 +789,8 @@ function App() {
                 players={players}
                 sharedGames={sharedGames}
                 sourceGame={sourceGame}
+                gameInfoCache={gameInfoCache}
+                setGameInfoCache={setGameInfoCache}
               />
             </div>
           )}
