@@ -15,6 +15,10 @@ Thx to all supporters of VGA Planets!
 ### Version 1.2
 - Added I18N for English and German
 
+### Version 1.3
+- Changed user texts for proxy.js to English
+- Added some setup information to this README file
+
 ---
 
 ## Tools
