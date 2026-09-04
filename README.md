@@ -45,6 +45,10 @@ A public tool (no login required) that analyzes which players in a game have pla
 
 The Planets.nu API does not support CORS, so a local proxy is required. It runs on `localhost:8765` and forwards requests to `api.planets.nu` via HTTPS.
 
+> **Important:** run this command in a regular terminal / command prompt (e.g. Command Prompt, PowerShell, or Windows Terminal on Windows; Terminal on macOS/Linux) — **not** inside the Node.js interactive console (the `>` prompt you get from just launching "Node.js" from the Start menu). If you type `node proxy.js` into that interactive console, Node tries to parse it as JavaScript and fails with `Uncaught SyntaxError: Unexpected identifier 'proxy'`.
+>
+> On Windows: open the folder containing `proxy.js` in File Explorer, then Shift+Right-click an empty spot (or just right-click, depending on your Windows version) and choose "Open in Terminal" / "Open PowerShell window here". Then run the command below.
+
 ```bash
 node proxy.js
 ```
@@ -52,7 +56,7 @@ node proxy.js
 You should see:
 
 ```
-  ✦ VGA Planets CORS-Proxy v1.6.0 läuft
+  ✦ VGA Planets CORS proxy v1.6.0 running
   → http://localhost:8765
 ```
 
