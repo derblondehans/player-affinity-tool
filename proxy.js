@@ -1,6 +1,6 @@
-// VGA Planets – Lokaler CORS-Proxy
-// Startet einen Mini-Server auf localhost:8765
-// Anforderung: Node.js (https://nodejs.org)
+// VGA Planets – Local CORS proxy
+// Starts a mini server on localhost:8765
+// Requirement: Node.js (https://nodejs.org)
 
 const VERSION = '1.6.0';
 
@@ -13,7 +13,7 @@ const PORT   = 8765;
 const TARGET = 'api.planets.nu';
 
 function apiGet(path, callback) {
-  // Versuche zuerst HTTPS (Port 443), dann HTTP (Port 80)
+  // Try HTTPS first (port 443), then HTTP (port 80)
   const attempts = [
     { lib: https, port: 443, proto: 'https' },
     { lib: http,  port: 80,  proto: 'http'  },
@@ -21,7 +21,7 @@ function apiGet(path, callback) {
 
   function tryNext(i) {
     if (i >= attempts.length) {
-      return callback(new Error('Weder HTTPS noch HTTP erreichbar'), null, null);
+      return callback(new Error('Neither HTTPS nor HTTP reachable'), null, null);
     }
 
     const { lib, port, proto } = attempts[i];
@@ -48,26 +48,26 @@ function apiGet(path, callback) {
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         const raw = Buffer.concat(chunks);
-        console.log(`  Empfangen: ${raw.length} bytes`);
+        console.log(`  Received: ${raw.length} bytes`);
 
         if (raw.length === 0) {
           return callback(null, res.statusCode,
-            Buffer.from('{"success":false,"error":"Leere Antwort vom Server"}'));
+            Buffer.from('{"success":false,"error":"Empty response from server"}'));
         }
 
         const finish = (buf) => {
-          console.log(`  Inhalt: ${buf.toString('utf8').slice(0, 120)}`);
+          console.log(`  Content: ${buf.toString('utf8').slice(0, 120)}`);
           callback(null, res.statusCode, buf);
         };
 
         if (encoding === 'gzip') {
           zlib.gunzip(raw, (err, decoded) => {
-            if (err) return callback(new Error('GZIP-Fehler: ' + err.message), null, null);
+            if (err) return callback(new Error('GZIP error: ' + err.message), null, null);
             finish(decoded);
           });
         } else if (encoding === 'deflate') {
           zlib.inflate(raw, (err, decoded) => {
-            if (err) return callback(new Error('Deflate-Fehler: ' + err.message), null, null);
+            if (err) return callback(new Error('Deflate error: ' + err.message), null, null);
             finish(decoded);
           });
         } else {
@@ -81,7 +81,7 @@ function apiGet(path, callback) {
     req.setTimeout(10000, () => req.destroy(new Error('Timeout')));
 
     req.on('error', (e) => {
-      console.warn(`  ${proto.toUpperCase()} fehlgeschlagen: ${e.message} → nächster Versuch...`);
+      console.warn(`  ${proto.toUpperCase()} failed: ${e.message} → trying next...`);
       tryNext(i + 1);
     });
 
@@ -102,7 +102,7 @@ const server = http.createServer((req, res) => {
 
   apiGet(apiPath, (err, status, body) => {
     if (err) {
-      console.error('Fehler:', err.message);
+      console.error('Error:', err.message);
       if (!res.headersSent) {
         res.writeHead(502, {
           'Content-Type':                'application/json',
@@ -124,11 +124,11 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log('');
-  console.log(`  ✦ VGA Planets CORS-Proxy v${VERSION} läuft`);
+  console.log(`  ✦ VGA Planets CORS proxy v${VERSION} running`);
   console.log(`  → http://localhost:${PORT}`);
   console.log('');
-  console.log('  Öffne jetzt vga_planets_client_local.html im Browser.');
-  console.log('  Dieses Fenster offen lassen solange du spielst.');
-  console.log('  Beenden: Strg+C');
+  console.log('  Now open planets_matrix.html in your browser.');
+  console.log('  Keep this window open while you play.');
+  console.log('  Stop: Ctrl+C');
   console.log('');
 });
